@@ -72,26 +72,6 @@ header("Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-$n
                     </div>
                 </button>
 
-                <button class="nav-item" data-tool="proxy">
-                    <div class="nav-content">
-                        <span class="nav-icon">🛡️</span>
-                        <div class="nav-text">
-                            Proxy Chains
-                            <div class="nav-subtitle">Decentralized Network</div>
-                        </div>
-                    </div>
-                </button>
-
-                <button class="nav-item" data-tool="tempmail">
-                    <div class="nav-content">
-                        <span class="nav-icon">✉️</span>
-                        <div class="nav-text">
-                            Temporary Mail
-                            <div class="nav-subtitle">Disposable Email</div>
-                        </div>
-                    </div>
-                </button>
-
                 <button class="nav-item" data-tool="privacy">
                     <div class="nav-content">
                         <span class="nav-icon">🔒</span>
