@@ -147,16 +147,6 @@ header("Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-$n
                                 <h3>P2P Transfer</h3>
                                 <p>Secure file sharing</p>
                             </div>
-                            <div class="tool-preview" data-tool="proxy">
-                                <div class="tool-preview-icon">🌐</div>
-                                <h3>Proxy Chains</h3>
-                                <p>Decentralized Mesh Network</p>
-                            </div>
-                            <div class="tool-preview" data-tool="tempmail">
-                                <div class="tool-preview-icon">📧</div>
-                                <h3>Temporary Mail</h3>
-                                <p>Disposable email addresses</p>
-                            </div>
                         </div>
                     </div>
                 </div>
