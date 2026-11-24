@@ -24,18 +24,6 @@ const tools = {
         breadcrumb: 'Privacy Tools > P2P Transfer',
         url: './gop2p/gallery.php',
     },
-    proxy: {
-        title: 'Proxy Chains',
-        icon: '🛡️',
-        breadcrumb: 'Privacy Tools > Proxy Chains',
-        url: './proxies/index.php'
-    },
-    tempmail: {
-        title: 'Temporary Mail',
-        icon: '✉️',
-        breadcrumb: 'Privacy Tools > Temporary Mail',
-        url: './tempmail/index.php'
-    },
     about: {
         title: 'About Privacy Tools',
         icon: 'ℹ️',
