@@ -253,6 +253,10 @@ header("Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-$n
                         <p>Our new Metadata Scrambler tool enhances your privacy by obfuscating metadata associated with your
                             files. This feature ensures that your digital footprint remains minimal, protecting your identity
                             and activities from unwanted tracking or analysis.</p>
+                        <h3>P2P Encrypted File Transfer</h3>
+                        <p>Share files privately with automatic 5-minute deletion. Send them directly from browser to browser 
+                            without ever touching the server, or use the encrypted server relay if you're browsing over Tor or 
+                            with WebRTC disabled.</p>
                     </div>
                 </div>
 
