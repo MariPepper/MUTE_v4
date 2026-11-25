@@ -1,0 +1,13 @@
+# gop2p/.htaccess
+
+Options -Indexes
+
+# Block unused HTTP methods
+<LimitExcept GET POST HEAD OPTIONS>
+    Require all denied
+</LimitExcept>
+
+# Block sensitive file extensions in this folder
+<FilesMatch "\.(json|log|enc|bak|old|swp)$">
+    Require all denied
+</FilesMatch>
