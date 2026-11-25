@@ -1,0 +1,12 @@
+# scrambler/logs/.htaccess
+# Block all direct HTTP access to log files.
+
+Options -Indexes
+
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order deny,allow
+    Deny from all
+</IfModule>
