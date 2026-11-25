@@ -1,0 +1,16 @@
+# scrambler/.htaccess
+# Defense in depth for the scrambler folder.
+
+Options -Indexes
+
+# Block direct access to PHP class files (only index.php should run)
+<FilesMatch "\.php$">
+    <If "%{REQUEST_URI} !~ m#/scrambler/index\.php$#">
+        Require all denied
+    </If>
+</FilesMatch>
+
+# Block sensitive files
+<FilesMatch "\.(log|json|bak|old|swp|DS_Store)$">
+    Require all denied
+</FilesMatch>
