@@ -19,7 +19,8 @@ Options -Indexes
     Require all denied
 </Files>
 
-# Block system folders
+# Block system folders and private data
 <IfModule mod_rewrite.c>
     RewriteRule ^(\.git|\.env|node_modules|vendor)/ - [F,L]
+    RewriteRule ^private/ - [F,L]
 </IfModule>
