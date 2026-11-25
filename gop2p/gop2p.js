@@ -482,6 +482,8 @@ document.addEventListener('DOMContentLoaded', function () {
             formData.append('type', file.type);
             formData.append('peerId', peerId);
 
+            formData.append('csrf', document.getElementById('csrf-token').value);
+
             const response = await fetch('', { method: 'POST', body: formData });
             const responseData = await response.json();
             if (response.ok && responseData.success) {
