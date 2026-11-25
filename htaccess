@@ -1,0 +1,25 @@
+# Root .htaccess
+
+Options -Indexes
+
+# Force HTTPS
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{HTTPS} off
+    RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+</IfModule>
+
+# Block sensitive files
+<FilesMatch "\.(env|git|htaccess|htpasswd|ini|log|sql|bak|old|swp|DS_Store)$">
+    Require all denied
+</FilesMatch>
+
+# Block server secret (gop2p)
+<Files ".gop2p_secret">
+    Require all denied
+</Files>
+
+# Block system folders
+<IfModule mod_rewrite.c>
+    RewriteRule ^(\.git|\.env|node_modules|vendor)/ - [F,L]
+</IfModule>
