@@ -6,6 +6,34 @@ if (!defined('IN_APP') && $_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 // ===============================================
 
+function checkRateLimit(string $ip, int $maxPerMinute = 20): bool {
+    $file = sys_get_temp_dir() . '/getsalt_' . md5($ip);
+    $now = time();
+    $data = is_file($file) ? json_decode((string) file_get_contents($file), true) : null;
+    if (!is_array($data) || $now - ($data['t'] ?? 0) > 60) {
+        $data = ['t' => $now, 'n' => 0];
+    }
+    $data['n']++;
+    file_put_contents($file, json_encode($data), LOCK_EX);
+    return $data['n'] <= $maxPerMinute;
+}
+$ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+if (!checkRateLimit($ip)) {
+    http_response_code(429);
+    header('Content-Type: application/json');
+    echo json_encode(['error' => 'Too many requests']);
+    exit;
+}
+
+$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+$host = $_SERVER['HTTP_HOST'] ?? '';
+if ($origin !== '' && parse_url($origin, PHP_URL_HOST) !== $host) {
+    http_response_code(403);
+    header('Content-Type: application/json');
+    echo json_encode(['error' => 'Forbidden']);
+    exit;
+}
+
 header('Content-Type: application/json');
 require_once 'encrypt_json.php';
 
@@ -16,7 +44,13 @@ function log_action($message) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['key_hash'])) {
-    $keyHash = $_POST['key_hash'];
+    $keyHash = $_POST['key_hash'] ?? ''; // MUDADO
+    if (!is_string($keyHash) || !preg_match('/^[a-f0-9]{64}$/', $keyHash)) { 
+        http_response_code(400); // NOVO
+        echo json_encode(['error' => 'Invalid key_hash']); 
+        exit; 
+    } 
+    
     $saltFile = '../private/salt_key_mapping.json';
     $currentTime = time();
 
@@ -39,7 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['key_hash'])) {
                 'sha512', // Use SHA-512 for quantum resistance
                 $keyHash, // Use key hash as password input
                 $salt,
-                1000000, // High iteration count
+                1000000, // Change to 210000 (OWASP 2023 recommendation for PBKDF2-HMAC-SHA512) if necessary
                 32, // 256-bit key
                 true // Raw binary output
             );
