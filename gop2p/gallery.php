@@ -7,9 +7,17 @@ define('METADATA_FILE', UPLOAD_DIR . 'files.json');
 define('MAX_FILE_SIZE', 10 * 1024 * 1024); // 10MB
 define('EXPIRY_TIME', 300); // 5 minutes in seconds
 define('ALLOWED_TYPES', ['image/jpeg', 'image/png', 'image/gif', 'application/pdf']);
+// Server secret for metadata encryption. Keep OUTSIDE the web root if possible.
+define('SERVER_SECRET_FILE', dirname(__DIR__) . '/.gop2p_secret');
 
 ini_set('display_errors', '0');
 error_reporting(E_ALL);
+
+session_start();
+if (empty($_SESSION['csrf'])) {
+    $_SESSION['csrf'] = bin2hex(random_bytes(32));
+}
+$csrf = $_SESSION['csrf'];
 
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: SAMEORIGIN');
@@ -27,7 +35,43 @@ function jsonOut($data, int $status = 200): void {
     exit;
 }
 
-// Ensure upload directory exists and is not reachable directly from the web
+// ---------------------------------------------------------------------------
+// Server secret (used only for metadata encryption)
+// ---------------------------------------------------------------------------
+function serverSecret(): string {
+    if (is_file(SERVER_SECRET_FILE)) {
+        return trim((string) file_get_contents(SERVER_SECRET_FILE));
+    }
+    $secret = bin2hex(random_bytes(32));
+    if (@file_put_contents(SERVER_SECRET_FILE, $secret, LOCK_EX) === false) {
+        jsonOut(['error' => 'Cannot create server secret'], 500);
+    }
+    @chmod(SERVER_SECRET_FILE, 0600);
+    return $secret;
+}
+
+function encryptMeta(string $plaintext, string $filename): string {
+    $key = hash_hmac('sha256', 'meta:' . $filename, serverSecret(), true);
+    $iv = random_bytes(12);
+    $tag = '';
+    $ct = openssl_encrypt($plaintext, 'aes-256-gcm', $key, OPENSSL_RAW_DATA, $iv, $tag);
+    return base64_encode($iv . $tag . $ct);
+}
+
+function decryptMeta(string $b64, string $filename): ?string {
+    $raw = base64_decode($b64, true);
+    if ($raw === false || strlen($raw) < 28) return null;
+    $key = hash_hmac('sha256', 'meta:' . $filename, serverSecret(), true);
+    $iv = substr($raw, 0, 12);
+    $tag = substr($raw, 12, 16);
+    $ct = substr($raw, 28);
+    $pt = openssl_decrypt($ct, 'aes-256-gcm', $key, OPENSSL_RAW_DATA, $iv, $tag);
+    return $pt === false ? null : $pt;
+}
+
+// ---------------------------------------------------------------------------
+// Storage
+// ---------------------------------------------------------------------------
 if (!is_dir(UPLOAD_DIR) && !mkdir(UPLOAD_DIR, 0750, true)) {
     jsonOut(['error' => 'Failed to create gallery directory'], 500);
 }
@@ -38,7 +82,6 @@ if (!file_exists(METADATA_FILE)) {
     file_put_contents(METADATA_FILE, '[]', LOCK_EX);
 }
 
-// Read-modify-write of files.json under an exclusive lock
 function withMetadata(callable $fn): array {
     $fp = fopen(METADATA_FILE, 'c+');
     if (!$fp) jsonOut(['error' => 'Cannot open metadata'], 500);
@@ -55,7 +98,6 @@ function withMetadata(callable $fn): array {
     return $meta;
 }
 
-// Clean up expired files
 function cleanExpiredFiles(): array {
     return withMetadata(function (array $meta): array {
         $now = time();
@@ -70,11 +112,15 @@ function cleanExpiredFiles(): array {
 }
 $metadata = cleanExpiredFiles();
 
-// Upload: the browser sends the already-encrypted blob.
-// Normal mode: the blob is stored and the key is kept too, so anyone in the public gallery
-//              can use the server copy as a fallback when the uploader is offline.
-// P2P only:    nothing is stored (no blob, no key); the file only lives in the uploader's tab.
+// ---------------------------------------------------------------------------
+// Upload
+// ---------------------------------------------------------------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $sent = $_POST['csrf'] ?? '';
+    $expected = $_SESSION['csrf'] ?? '';
+    if ($sent === '' || $expected === '' || !hash_equals($expected, $sent)) {
+        jsonOut(['error' => 'csrf'], 403);
+    }
     $file = $_FILES['file'] ?? null;
     $p2pOnly = ($_POST['p2p'] ?? '') === '1';
     $type = (string) ($_POST['type'] ?? '');
@@ -87,14 +133,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$file || $file['error'] !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'])) {
             jsonOut(['error' => 'Upload error'], 400);
         }
-        if ($file['size'] > MAX_FILE_SIZE + 1024) { // +overhead of IV and auth tag
+        if ($file['size'] > MAX_FILE_SIZE + 1024) {
             jsonOut(['error' => 'File size exceeds 10MB limit.'], 413);
         }
     }
     if (!in_array($type, ALLOWED_TYPES, true)) {
         jsonOut(['error' => 'Invalid file type. Allowed: JPEG, PNG, GIF, PDF.'], 415);
     }
-    // AES-256 key = 32 bytes = 43 chars in base64url
     if (!$p2pOnly && !preg_match('/^[A-Za-z0-9_-]{43}$/', $key)) {
         jsonOut(['error' => 'Invalid key'], 400);
     }
@@ -109,21 +154,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$p2pOnly && !move_uploaded_file($file['tmp_name'], UPLOAD_DIR . $filename)) {
         jsonOut(['error' => 'Failed to save file.'], 500);
     }
-    withMetadata(function (array $meta) use ($filename, $name, $type, $peerId, $p2pOnly, $key): array {
+
+    // Encrypt PII metadata. Keep the key in plain (protected by .htaccess).
+    $nameEnc = encryptMeta($name, $filename);
+    $typeEnc = encryptMeta($type, $filename);
+    $peerEnc = encryptMeta($peerId, $filename);
+
+    withMetadata(function (array $meta) use ($filename, $nameEnc, $typeEnc, $peerEnc, $p2pOnly, $key): array {
         $meta[$filename] = [
-            'name' => $name,
-            'type' => $type,
+            'name_enc' => $nameEnc,
+            'type_enc' => $typeEnc,
+            'peer_enc' => $peerEnc,
             'time' => time(),
-            'peerId' => $peerId,
             'p2p' => $p2pOnly,
-            'key' => $p2pOnly ? '' : $key
+            'key' => $p2pOnly ? '' : $key  // plain, same as before — .htaccess protects it
         ];
         return $meta;
     });
     jsonOut(['success' => true, 'filename' => $filename]);
 }
 
-// Download (server fallback): returns the encrypted blob, decrypted in the browser
+// ---------------------------------------------------------------------------
+// Download (server fallback)
+// ---------------------------------------------------------------------------
 if (isset($_GET['download'])) {
     $filename = (string) $_GET['download'];
     if (!preg_match('/^[a-f0-9]{16}\.enc$/', $filename) || !isset($metadata[$filename]) || !is_file(UPLOAD_DIR . $filename)) {
@@ -136,26 +189,33 @@ if (isset($_GET['download'])) {
     exit;
 }
 
-// File list (replaces direct access to gallery/files.json)
+// ---------------------------------------------------------------------------
+// File list
+// ---------------------------------------------------------------------------
 if (isset($_GET['list'])) {
     $now = time();
     $list = [];
     foreach ($metadata as $filename => $info) {
         $isP2p = !empty($info['p2p']);
+        $name = decryptMeta($info['name_enc'] ?? '', $filename) ?? 'unknown';
+        $type = decryptMeta($info['type_enc'] ?? '', $filename) ?? 'application/octet-stream';
+        $peer = decryptMeta($info['peer_enc'] ?? '', $filename) ?? '';
         $list[] = [
             'filename' => $filename,
-            'name' => $info['name'],
-            'type' => $info['type'],
-            'peerId' => $info['peerId'] ?? '',
+            'name' => $name,
+            'type' => $type,
+            'peerId' => $peer,
             'p2p' => $isP2p,
-            'key' => $isP2p ? '' : ($info['key'] ?? ''), // never exposed for P2P-only files
-            'expires_in' => EXPIRY_TIME - ($now - $info['time'])
+            'key' => $isP2p ? '' : ($info['key'] ?? ''),  // same key the browser sent
+            'expires_in' => EXPIRY_TIME - ($now - ($info['time'] ?? 0))
         ];
     }
     jsonOut($list);
 }
 
-// Generate a random nonce for CSP
+// ---------------------------------------------------------------------------
+// HTML
+// ---------------------------------------------------------------------------
 $nonce = base64_encode(random_bytes(16));
 header('Content-Type: text/html; charset=utf-8');
 header("Content-Security-Policy: default-src 'self' blob:; script-src 'self' 'nonce-$nonce' https://unpkg.com; style-src 'self'; font-src 'self'; img-src 'self' blob: data:; connect-src 'self' blob: frame-ancestors 'self'; object-src 'none'; https: wss:;");
@@ -179,6 +239,7 @@ header("Content-Security-Policy: default-src 'self' blob:; script-src 'self' 'no
                 <div class="form-group">
                     <input type="file" name="file" id="file" accept="image/jpeg,image/png,image/gif,application/pdf" required>
                 </div>
+                <input type="hidden" id="csrf-token" value="<?php echo htmlspecialchars($csrf, ENT_QUOTES); ?>">
                 <div class="form-group">
                     <label><input type="checkbox" id="p2pOnly"> P2P only (don't store on the server)</label>
                 </div>
