@@ -6,7 +6,7 @@ $nonce = base64_encode(random_bytes(16));
 // Security Headers
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: SAMEORIGIN');
-header('X-XSS-Protection: 1; mode=block');
+header('X-Robots-Tag: noindex, nofollow');
 header('Referrer-Policy: strict-origin-when-cross-origin');
 header('Strict-Transport-Security: max-age=31536000;');
 header("Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-$nonce'; style-src 'self';");
